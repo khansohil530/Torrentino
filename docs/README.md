@@ -151,17 +151,85 @@ To handle this conversion b/w torrent file and python, you can implement a wrapp
 
 After receiving a list of peers, our client needs to open a `TCP` connection with that peer to exchange information using this `Peer Protocol`. 
 
-It works in following steps:
-1. `Handshake`: first message sent needs to be a handshake message which is initiated by client. This would return a `Handshake` response from requested peer, which contains
-    - `peer_id`: unique ID of peer
-    - `info_hash`: sha1 hash value for info dict.
+This protocol uses a set of `messages` and `peer states` to operate.
 
-    The format of message is `<pstrlen><pstr><reserved><info_hash><peer_id>`. 
-    It is (49+len(pstr)) bytes long,
-    - where `pstr` is defined by version of protocol
-        Example, `pstr` for version `1.0` is `"BitTorrent protocol"`, so the handshake message would be `68 bytes long`
-    - `pstrlen` will be a single byte
-    - `reserved` are pad bytes with no values (for future comp.)
-    - `info_hash` and `peer_id` are 20 byte string unique to torrent and client. If `info_hash` doesn't match the torrent, we can close the connection.
+## `State`
+A client must maintain state information with its peer connections to facilitate exchange of information. These states are:
+1. `choked`: indicates if a peer has choked the client, which means not request from client will be answered till the client is unchoked. All requests for blocks in this state will remain unanswered by peer.
+2. `interested`: indicates if a peer is interested in a piece client has to offer. This notifies the client that peer will start requesting the piece onces its unchoked.
 
+This state is kept tracked on both side of communication, peers will also track if a client is interested or if its choked.
+So real list of states looks like this:
+- am_choking: client is choking peer 
+- am_interested: client is interested in a piece on peer
+- peer_choking: peer is choking client
+- peer_interested: peer is interested in a piece on client
 
+## `Message`
+BitTorrent spec. has defined all its communication b/w peers through these message, whether it be for managing states or transferring data or requesting data.
+> Apart from `Handshake` message rest of the messages follow the format `<length prefix><message ID><payload>`. The length if 4 byte big-endian value. MessageId unique to each message is single decimal byte. And payload is message dependent.  
+
+These message are following types:
+1. `Handshake`: 
+    - required message which is first transmitted message by client when connecting to a peer
+    - format: `<pstrlen><pstr><reserved><info_hash><peer_id>`
+        - `pstrlen`: single raw byte specifying length of `pstr`
+        - `pstr`: string identifier of protocol, like for version 1.0, `pstr="BitTorrent protocol"`.
+        - `reserved`: 8 reserved bytes, usually pad bytes. used to change behaviour of protocol.
+        - `info_hash`: 20 byte sha1 hash of `info` in `meta info`. This should be same `info_hash` transmitted in `tracker` request.
+        - `peer_id`: 20 byte string unique to client, same as `peer_id` used in tracker request. 
+2. `keep-alive`:
+    - format: `<len=0000>`, zero byte message with no Id and payload.
+    - peers may close connection if they receive no message for some time.
+    - So `keep-alive` messages must be sent periodically (usually 2mins) to keep the connection alive.
+3. `choke`: format: `<len=0001><id=0>`, fixed length, no payload message
+4. `unchoke`: format: `<len=0001><id=1>`
+5. `interested`: format: `<len=0001><id=2>`
+6. `not interested`: format: `<len=0001><id=3>`
+7. `have`: 
+    - format: `<len=0005><id=4><piece index>`
+    - payload is zero based index of piece which the peer have downloaded and verified with `info_hash`
+    - malicious peer may also broadcast pieces it have knowing the client will never request this piece. Due to this, using this information model is <b>bad idea</b>.
+8. `bitfield`:
+    - format: `<len=0001+X><id=5><bitfield>`, varible length message
+        - `X` is length of bitfield in <b>bytes</b>.
+        - `bitfield` is payload representing the pieces present on peer using `1` and `0` bits for presence and absence. The index of bits indicates the index of pieces (0 based index).
+        - Some client may send `bitfield` with missing data even if the piece is present. Then rest of missing bits present are broadcasted using `have` message. This is called `lazy bitfield` and it helps against ISP filtering of `BitTorrent protocol`.
+        - Since the length is in `bytes` the bitfield may have spare bits at last byte which are usually unset. 
+        - client should drop the connection if bitfield is of incorrect length or if any spare bits are set.
+
+9. `request`:
+    - format: `<len=0013><id=6><index><begin><length>`
+    - used to request a piece
+        - `index` specifies zero based index of piece    
+        - `begin` specifies the zero based byte offset within piece
+        - `length` specifies the requested length
+    - <b><u>`What is the ideal ``length`` per request?`</u></b>:
+        - Offically, `32KB` is used by current implementation and any request larger than `128KB` will close the connection.
+        - In reality, `16KB` is used by clients below which will lead to network overhead. 
+10. `piece`
+    - format: `<len=0009+X><id=7><index><begin><block>`, varible length
+    - `index` zero based index of piece
+    - `begin` byte offset index in piece
+    - `block` block of data specified by data
+11. `cancel`: `<len=0013><id=8><index><begin><length>`, fixed length message to cancel block requests
+12. `port`: `<len=0003><id=9><listen-port>`, implemented by DHT tracker, where listen port is peer's listening port on DHT`s (Distributed Hash Table) node.
+
+# Flow
+
+1. Tracker request: client discovers other peers having the torrent through this request.
+2. Peer connection (Handshake): client establishes TCP connection with peer through a Handshake message.
+    - client sends `Handshake` message to peer
+    - peer verifies the info_hash and responds with `Handshake` message
+    - if success, TCP connection is established
+3. BitField exchange: Peer shares the availability of pieces through this message to client.
+4. Piece exchange (choking and unchoking): negotiates which pieces to exchange
+    - peer in choked state won't send data
+    - client will send an `interested` message expressing intent to download pieces
+    - once peer sents `unchoke` message, client can begin requesting pieces 
+4. Piece request and downloading: Peer and client exchanges pieces of file through request and piece messages once peer is `unchoked`.
+    - client will send `request` message to request specified piece
+    - peer will send `piece` message to client with data
+    - `have` request to inform peers client has this new piece
+
+5. Seeding and Completetion: Once client has downloaded the full file, it can continue to upload to other peers. 
