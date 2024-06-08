@@ -83,10 +83,11 @@ class Tracker:
     Represents the connection to a tracker for a given Torrent that is either
     under download or seeding state.
     """
-    def __init__(self, torrent):
+    def __init__(self, torrent, port=6889):
         self.torrent = torrent
         self.peer_id = _calculate_peer_id()
         self.http_client = aiohttp.ClientSession()
+        self._port = port
         
     async def connect(self, 
                       first: bool = None,
@@ -106,7 +107,7 @@ class Tracker:
         params = {
             'info_hash': self.torrent.info_hash,
             'peer_id': self.peer_id,
-            'port': 6889,
+            'port': self._port,
             'uploaded': uploaded,
             'downloaded': downloaded,
             'left': self.torrent.total_size - downloaded,

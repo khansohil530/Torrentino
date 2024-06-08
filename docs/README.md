@@ -145,3 +145,23 @@ To handle this conversion b/w torrent file and python, you can implement a wrapp
 > It is considered bad pratice to send announce request to tracker more frequently then specified interval. This if often done to get more peers. 
 
 >However on implementation, 30 peers are plenty. When new piece is downloaded, HAVE messages will need to be sent to most active peers. This results in increase in broadcast traffic which is directly propotional to number of peers.   
+
+
+# Peer Protocol
+
+After receiving a list of peers, our client needs to open a `TCP` connection with that peer to exchange information using this `Peer Protocol`. 
+
+It works in following steps:
+1. `Handshake`: first message sent needs to be a handshake message which is initiated by client. This would return a `Handshake` response from requested peer, which contains
+    - `peer_id`: unique ID of peer
+    - `info_hash`: sha1 hash value for info dict.
+
+    The format of message is `<pstrlen><pstr><reserved><info_hash><peer_id>`. 
+    It is (49+len(pstr)) bytes long,
+    - where `pstr` is defined by version of protocol
+        Example, `pstr` for version `1.0` is `"BitTorrent protocol"`, so the handshake message would be `68 bytes long`
+    - `pstrlen` will be a single byte
+    - `reserved` are pad bytes with no values (for future comp.)
+    - `info_hash` and `peer_id` are 20 byte string unique to torrent and client. If `info_hash` doesn't match the torrent, we can close the connection.
+
+
