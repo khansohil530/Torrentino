@@ -8,3 +8,7 @@ TOKEN_END = b'e'
 TOKEN_STRING_SEPERATOR = b':'
 
 TorrentFile = namedtuple('TorrentFile', ['name', 'length'])
+
+REQUEST_SIZE = 2**14
+
+PendingRequest = namedtuple('PendingRequest', ['block', 'added'])

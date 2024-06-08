@@ -2,10 +2,10 @@ import struct
 import logging
 from bitstring import BitArray
 
+from src.const import REQUEST_SIZE
 
 logger = logging.getLogger(__name__)
 
-REQUEST_SIZE = 2**14
 
 class PeerMessage:
     """
