@@ -79,7 +79,7 @@ class Piece:
         :return: True or False
         """
         blocks = [b for b in self.blocks if b.status is not Block.Retrieved]
-        return len(blocks) is 0
+        return len(blocks) == 0
     
     def is_hash_matching(self):
         """
@@ -222,7 +222,7 @@ class PieceManager:
         if not block:
             block = self._next_ongoing(peer_id)
             if not block:
-                block = self._get_rarest_piece(peer_id).next_request()
+                block = self._next_missing(peer_id) # TODO update with rarest missing algor
         return block
     
     def _expired_requests(self, peer_id) -> Block:
@@ -256,6 +256,25 @@ class PieceManager:
                         PendingRequest(block, int(round(time.time()*1000)))
                     )
                     return block
+        return None
+    
+    def _next_missing(self, peer_id) -> Block:
+        """
+        Go through the missing pieces and return the next block to request
+        or None if no block is left to be requested.
+
+        This will change the state of the piece from missing to ongoing - thus
+        the next call to this function will not continue with the blocks for
+        that piece, rather get the next missing piece.
+        """
+        for index, piece in enumerate(self.missing_pieces):
+            if self.peers[peer_id][piece.index]:
+                # Move this piece from missing to ongoing
+                piece = self.missing_pieces.pop(index)
+                self.ongoing_pieces.append(piece)
+                # The missing pieces does not have any previously requested
+                # blocks (then it is ongoing).
+                return piece.next_request()
         return None
     
     def _get_rarest_piece(self, peer_id):

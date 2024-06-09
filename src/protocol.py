@@ -192,7 +192,7 @@ class PeerConnection:
         return buf[msglib.Handshake.LENGTH:]
     
     async def _send_interested(self):
-        message = message.Interested()
+        message = msglib.Interested()
         logger.debug(f'Sending message: {message}')
         self.writer.write(message.encode())
         await self.writer.drain()
@@ -213,7 +213,7 @@ class PeerStreamIterator:
         self.reader = reader
         self.buffer = initial if initial else b''
     
-    async def __aiter__(self):
+    def __aiter__(self):
         return self
     
     async def __anext__(self):
@@ -287,7 +287,7 @@ class PeerStreamIterator:
                     _consume()
                     return msglib.Unchoke()
                 elif message_id is msglib.PeerMessage.Have:
-                    data = _data
+                    data = _data()
                     return msglib.Have.decode(data)
                 elif message_id is msglib.PeerMessage.Piece:
                     data = _data()

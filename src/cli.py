@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 def get_option_parser() -> OptionParser:
     parser = OptionParser()
     parser.add_option('-T', '--torrent', dest='torrent', help='Torrent for file to download')
-    parser.add_option('-p', '--port', default='8888', dest='port',
+    parser.add_option('-p', '--port', default='6889', dest='port',
                       help='Port to listen on.', type='int')
     parser.add_option('-d', '--debug', action='store_true', dest='debug',
                       help='Log debug messages.')
@@ -23,9 +23,16 @@ def get_option_parser() -> OptionParser:
     return parser
 
 def configure_logger(options: OptionParser):
-    logger.addHandler(logging.StreamHandler())
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    
     if options.log_file:
-        logger.addHandler(logging.FileHandler(options.log_file))
+        file_handler = logging.FileHandler(options.log_file)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+        
     if options.debug:
         logger.setLevel(logging.DEBUG)
     elif options.error:
